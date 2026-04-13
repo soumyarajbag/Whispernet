@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhisperNet — Confess Anonymously</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:            #07070f;
+      --surface:       #0e0e1c;
+      --surface-hi:    #14142a;
+      --border:        rgba(139, 92, 246, 0.15);
+      --border-hi:     rgba(139, 92, 246, 0.45);
+      --purple:        #8b5cf6;
+      --purple-dim:    rgba(139, 92, 246, 0.12);
+      --cyan:          #22d3ee;
+      --green:         #10b981;
+      --yellow:        #f59e0b;
+      --red:           #ef4444;
+      --text:          #f1f5f9;
+      --text-muted:    #64748b;
+      --text-dim:      #1e293b;
+      --radius:        14px;
+      --radius-sm:     8px;
+      --transition:    0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background ambience ───────────────────────────────────────────── */
+    .bg-orb {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(80px);
+      z-index: 0;
+    }
+    .bg-orb-1 {
+      width: 700px; height: 700px;
+      background: radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%);
+      top: -200px; left: 50%; transform: translateX(-50%);
+      animation: orbFloat 8s ease-in-out infinite;
+    }
+    .bg-orb-2 {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(34,211,238,0.05) 0%, transparent 70%);
+      bottom: 10%; right: -100px;
+      animation: orbFloat 12s ease-in-out infinite reverse;
+    }
+    @keyframes orbFloat {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50%       { transform: translateX(-50%) translateY(-30px); }
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────────── */
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 0 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(7, 7, 15, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-inner {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .logo-icon {
+      font-size: 28px;
+      animation: ghostBob 3s ease-in-out infinite;
+    }
+    @keyframes ghostBob {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-4px); }
+    }
+    .logo-text h1 {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 0%, var(--purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.3px;
+    }
+    .logo-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ── Live badge ────────────────────────────────────────────────────── */
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 5px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+    }
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .live-badge.connected .live-dot {
+      background: var(--green);
+      animation: dotPulse 2s ease-in-out infinite;
+    }
+    .live-badge.connected { color: var(--green); border-color: rgba(16,185,129,0.25); }
+    .live-badge.disconnected .live-dot { background: var(--red); }
+    .live-badge.disconnected { color: var(--red); border-color: rgba(239,68,68,0.25); }
+    @keyframes dotPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+      50%       { box-shadow: 0 0 0 5px rgba(16,185,129,0); }
+    }
+
+    /* ── Admin button ──────────────────────────────────────────────────── */
+    .admin-btn {
+      padding: 6px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      font-family: inherit;
+    }
+    .admin-btn:hover { border-color: var(--border-hi); color: var(--text); }
+    .admin-btn.authed { color: var(--purple); border-color: var(--border-hi); }
+
+    /* ── Main content ──────────────────────────────────────────────────── */
+    main { padding: 24px 0 80px; }
+
+    /* ── Confession form ───────────────────────────────────────────────── */
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      transition: border-color var(--transition);
+    }
+    .form-card:focus-within {
+      border-color: var(--border-hi);
+      box-shadow: 0 0 0 1px rgba(139,92,246,0.1), 0 8px 32px rgba(139,92,246,0.08);
+    }
+    .form-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .form-header span { font-size: 18px; }
+    textarea {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.7;
+      resize: none;
+      min-height: 100px;
+      caret-color: var(--purple);
+    }
+    textarea::placeholder { color: var(--text-muted); opacity: 0.6; }
+    .form-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .char-count {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .char-count.warn  { color: var(--yellow); }
+    .char-count.limit { color: var(--red); }
+
+    .submit-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      background: linear-gradient(135deg, var(--purple) 0%, #6d28d9 100%);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+    .submit-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0);
+      transition: var(--transition);
+    }
+    .submit-btn:hover:not(:disabled)::after { background: rgba(255,255,255,0.08); }
+    .submit-btn:active:not(:disabled) { transform: scale(0.97); }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .submit-btn.loading .btn-label { opacity: 0; }
+    .submit-btn.loading .btn-spinner { opacity: 1; }
+    .btn-spinner {
+      position: absolute;
+      opacity: 0;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Sort tabs ─────────────────────────────────────────────────────── */
+    .sort-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 4px;
+    }
+    .tab {
+      flex: 1;
+      padding: 7px 14px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active {
+      background: var(--surface-hi);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    }
+
+    /* ── New whispers banner ───────────────────────────────────────────── */
+    .new-banner {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      background: var(--purple);
+      color: #fff;
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      z-index: 99;
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 4px 20px rgba(139,92,246,0.5);
+      white-space: nowrap;
+    }
+    .new-banner.visible { transform: translateX(-50%) translateY(0); }
+
+    /* ── Confession card ───────────────────────────────────────────────── */
+    .confession-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--purple);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 10px;
+      transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+      animation: slideUp 0.3s ease both;
+    }
+    .confession-card:hover {
+      border-color: var(--border-hi);
+      border-left-color: var(--purple);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(139,92,246,0.09);
+    }
+    .confession-card.removing {
+      animation: slideOut 0.3s ease both;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideOut {
+      from { opacity: 1; transform: translateY(0) scale(1); max-height: 300px; }
+      to   { opacity: 0; transform: translateY(-10px) scale(0.97); max-height: 0; padding: 0; margin: 0; }
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .avatar {
+      font-size: 22px;
+      width: 38px; height: 38px;
+      background: var(--surface-hi);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .card-meta { flex: 1; min-width: 0; }
+    .anon-name {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-time {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    .confession-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13.5px;
+      line-height: 1.75;
+      color: var(--text);
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    /* Upvote */
+    .upvote-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .upvote-btn:hover {
+      border-color: rgba(245,158,11,0.5);
+      color: var(--yellow);
+      background: rgba(245,158,11,0.07);
+    }
+    .upvote-btn.voted {
+      border-color: rgba(245,158,11,0.5);
+      color: var(--yellow);
+      background: rgba(245,158,11,0.1);
+    }
+    .upvote-btn .fire { font-size: 15px; }
+    .upvote-count {
+      font-variant-numeric: tabular-nums;
+      transition: transform 0.15s ease;
+    }
+    .upvote-count.bump {
+      animation: countBump 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes countBump {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.5); }
+      100% { transform: scale(1); }
+    }
+
+    /* Report */
+    .report-btn {
+      padding: 6px 10px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--text-dim);
+      font-size: 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      margin-left: auto;
+      font-family: inherit;
+    }
+    .report-btn:hover { color: var(--red); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.07); }
+
+    /* Delete (admin only) */
+    .delete-btn {
+      padding: 5px 9px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text-dim);
+      transition: var(--transition);
+    }
+    .delete-btn:hover { color: var(--red); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); }
+
+    /* ── Empty state ───────────────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+    .empty-state p { font-size: 15px; }
+
+    /* ── Load more ─────────────────────────────────────────────────────── */
+    .load-more-wrap {
+      text-align: center;
+      margin-top: 16px;
+    }
+    .load-more-btn {
+      padding: 10px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .load-more-btn:hover { border-color: var(--border-hi); color: var(--text); }
+    .load-more-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Toasts ────────────────────────────────────────────────────────── */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 8px;
+    }
+    .toast {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--surface-hi);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+      font-size: 13px;
+      max-width: 300px;
+      animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    .toast.out { animation: toastOut 0.25s ease both; }
+    .toast-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .toast-msg { color: var(--text); line-height: 1.5; }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error   { border-left: 3px solid var(--red); }
+    .toast.info    { border-left: 3px solid var(--purple); }
+    @keyframes toastIn  {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes toastOut {
+      to { opacity: 0; transform: translateX(20px) scale(0.95); }
+    }
+
+    /* ── Modal ─────────────────────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(6px);
+      z-index: 150;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition);
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius);
+      padding: 28px;
+      width: 100%;
+      max-width: 380px;
+      transform: scale(0.95) translateY(10px);
+      transition: transform var(--transition);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.1);
+    }
+    .modal-overlay.open .modal { transform: scale(1) translateY(0); }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-close {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 4px;
+      transition: color var(--transition);
+    }
+    .modal-close:hover { color: var(--text); }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%;
+      padding: 10px 13px;
+      background: var(--surface-hi);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color var(--transition);
+    }
+    .field input:focus { border-color: var(--border-hi); }
+
+    .btn-primary {
+      width: 100%;
+      padding: 11px;
+      background: linear-gradient(135deg, var(--purple) 0%, #6d28d9 100%);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      margin-top: 4px;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .admin-logged-in {
+      text-align: center;
+      padding: 10px 0;
+    }
+    .admin-logged-in .admin-avatar { font-size: 40px; margin-bottom: 10px; }
+    .admin-logged-in p { color: var(--text-muted); font-size: 14px; margin-top: 8px; }
+    .logout-btn {
+      margin-top: 16px;
+      padding: 9px 20px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-sm);
+      color: var(--red);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .logout-btn:hover { background: rgba(239,68,68,0.18); }
+
+    /* ── Skeleton loader ───────────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-hi) 50%, var(--surface) 75%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 6px;
+    }
+    @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+    .skeleton-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--text-dim);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 10px;
+    }
+    .skeleton-row { height: 12px; margin-bottom: 10px; }
+    .skeleton-row:last-child { width: 60%; margin-bottom: 0; }
+
+    /* ── Scrollbar ─────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 10px; }
+  </style>
+</head>
+<body>
+
+<!-- Ambient glow -->
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+
+<!-- New whispers banner (appears when scrolled down) -->
+<div class="new-banner" id="new-banner" onclick="scrollToTopAndRefresh()">
+  ↑ <span id="new-banner-count">0</span> new whisper(s)
+</div>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header>
+  <div class="header-inner">
+    <a class="logo" href="#">
+      <span class="logo-icon">👻</span>
+      <div class="logo-text">
+        <h1>WhisperNet</h1>
+        <p>Your secrets are safe here</p>
+      </div>
+    </a>
+    <div class="header-right">
+      <div class="live-badge" id="live-badge">
+        <span class="live-dot"></span>
+        <span id="live-text">Connecting</span>
+      </div>
+      <button class="admin-btn" id="admin-btn" onclick="openAdmin()">🔑 Admin</button>
+    </div>
+  </div>
+</header>
+
+<!-- ── Main ────────────────────────────────────────────────────────────── -->
+<main>
+  <div class="container">
+
+    <!-- Confession form -->
+    <div class="form-card">
+      <div class="form-header">
+        <span>🤫</span>
+        <span>Drop a confession</span>
+      </div>
+      <textarea
+        id="confession-input"
+        rows="4"
+        maxlength="500"
+        placeholder="I once pushed broken code to prod and blamed the internet..."
+      ></textarea>
+      <div class="form-footer">
+        <span class="char-count" id="char-count">0 / 500</span>
+        <button class="submit-btn" id="submit-btn" onclick="submitConfession()">
+          <span class="btn-spinner"></span>
+          <span class="btn-label">👻 Whisper it</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sort tabs -->
+    <div class="sort-tabs">
+      <button class="tab active" id="tab-newest" onclick="setSort('newest')">🕐 Newest</button>
+      <button class="tab" id="tab-top"    onclick="setSort('top')">🔥 Top Voted</button>
+    </div>
+
+    <!-- Feed -->
+    <div id="feed"></div>
+
+    <!-- Load more -->
+    <div class="load-more-wrap" id="load-more-wrap" style="display:none">
+      <button class="load-more-btn" id="load-more-btn" onclick="loadMore()">
+        Load more whispers
+      </button>
+    </div>
+
+  </div>
+</main>
+
+<!-- ── Toasts ───────────────────────────────────────────────────────────── -->
+<div class="toast-container" id="toasts"></div>
+
+<!-- ── Admin modal ──────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="admin-modal" onclick="handleModalClick(event)">
+  <div class="modal">
+    <div class="modal-title">
+      🔑 Admin Panel
+      <button class="modal-close" onclick="closeAdmin()">×</button>
+    </div>
+
+    <!-- Login form (shown when not logged in) -->
+    <div id="admin-login-form">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="admin-username" placeholder="moderator" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="admin-password" placeholder="••••••••" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') adminLogin()" />
+      </div>
+      <button class="btn-primary" id="login-btn" onclick="adminLogin()">Login</button>
+    </div>
+
+    <!-- Logged-in state -->
+    <div id="admin-logged-in" class="admin-logged-in" style="display:none">
+      <div class="admin-avatar">🛡️</div>
+      <strong>Logged in as Admin</strong>
+      <p>Delete buttons are now visible on all confession cards.</p>
+      <button class="logout-btn" onclick="adminLogout()">Logout</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────────────
+  const API    = '';           // empty = same origin (served by Express)
+  const WS_URL = `ws://${location.host}`;
+
+  // ── State ─────────────────────────────────────────────────────────────
+  const state = {
+    confessions: [],
+    sort:        'newest',
+    page:        1,
+    limit:       10,
+    total:       0,
+    adminToken:  null,
+    voted:       new Set(JSON.parse(sessionStorage.getItem('wn_voted') || '[]')),
+    reported:    new Set(JSON.parse(sessionStorage.getItem('wn_reported') || '[]')),
+    ws:          null,
+    wsDelay:     1000,
+    newCount:    0,
+    loading:     false,
+  };
+
+  // ── Anon identity helpers ─────────────────────────────────────────────
+  const AVATARS    = ['👻','🤫','🎭','🕵️','🧙','🦊','🦁','🐺','🦝','🦉','🔮','💀','🃏','🌚','🦸'];
+  const ADJECTIVES = ['Mysterious','Anonymous','Secret','Hidden','Silent','Masked','Unknown','Invisible','Shadowy','Cryptic'];
+  const NOUNS      = ['Fox','Wolf','Raven','Phantom','Specter','Wraith','Cipher','Enigma','Ghost','Whisperer'];
+
+  function hashId(id) {
+    return String(id).split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0);
+  }
+  function getAvatar(id)   { const h = Math.abs(hashId(id)); return AVATARS[h % AVATARS.length]; }
+  function getAnonName(id) {
+    const h = Math.abs(hashId(id));
+    return `${ADJECTIVES[h % ADJECTIVES.length]} ${NOUNS[(h * 7) % NOUNS.length]}`;
+  }
+
+  // ── Time formatting ────────────────────────────────────────────────────
+  function timeAgo(iso) {
+    const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (s < 5)   return 'just now';
+    if (s < 60)  return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  // ── Security: escape HTML before injecting text ────────────────────────
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+              .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  }
+
+  // ── API wrapper ────────────────────────────────────────────────────────
+  async function api(method, path, body = null, token = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body)  opts.body = JSON.stringify(body);
+    if (token) opts.headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API}${path}`, opts);
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
+  // ── Fetch & render ─────────────────────────────────────────────────────
+  async function loadConfessions(reset = false) {
+    if (state.loading) return;
+    state.loading = true;
+    if (reset) { state.page = 1; state.confessions = []; renderSkeletons(); }
+
+    try {
+      const data = await api('GET', `/confessions?sort=${state.sort}&page=${state.page}&limit=${state.limit}`);
+      if (!data?.data) return;
+      state.total = data.meta.total;
+      if (reset) {
+        state.confessions = data.data;
+      } else {
+        state.confessions.push(...data.data);
+      }
+      renderFeed(reset);
+    } catch (e) {
+      toast('Could not reach the server 😔', 'error');
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  function renderFeed(reset = false) {
+    const feed = document.getElementById('feed');
+    if (reset) feed.innerHTML = '';
+
+    if (state.confessions.length === 0) {
+      feed.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🤫</div>
+          <p>No confessions yet. Be the first to whisper.</p>
+        </div>`;
+    } else {
+      const existingIds = new Set([...feed.querySelectorAll('[data-id]')].map(el => el.dataset.id));
+      state.confessions.forEach(c => {
+        if (!existingIds.has(c.id)) feed.appendChild(makeCard(c));
+      });
+    }
+
+    // Load more button
+    const wrap = document.getElementById('load-more-wrap');
+    const btn  = document.getElementById('load-more-btn');
+    const shown = state.confessions.length;
+    wrap.style.display = shown < state.total ? 'block' : 'none';
+    if (btn) btn.disabled = false;
+  }
+
+  function renderSkeletons() {
+    const feed = document.getElementById('feed');
+    feed.innerHTML = Array(3).fill(`
+      <div class="skeleton-card">
+        <div class="skeleton skeleton-row" style="width:40%"></div>
+        <div class="skeleton skeleton-row" style="width:95%"></div>
+        <div class="skeleton skeleton-row" style="width:80%"></div>
+        <div class="skeleton skeleton-row" style="width:60%"></div>
+      </div>`).join('');
+  }
+
+  // ── Create card DOM node ───────────────────────────────────────────────
+  function makeCard(confession) {
+    const div = document.createElement('div');
+    div.className = 'confession-card';
+    div.dataset.id = confession.id;
+
+    const isVoted    = state.voted.has(confession.id);
+    const isReported = state.reported.has(confession.id);
+
+    div.innerHTML = `
+      <div class="card-header">
+        <div class="avatar">${getAvatar(confession.id)}</div>
+        <div class="card-meta">
+          <span class="anon-name">${getAnonName(confession.id)}</span>
+          <span class="card-time">${timeAgo(confession.createdAt)}</span>
+        </div>
+        ${state.adminToken
+          ? `<button class="delete-btn" title="Delete" onclick="deleteConfession('${confession.id}')">🗑️</button>`
+          : ''}
+      </div>
+
+      <p class="confession-text">${escHtml(confession.text)}</p>
+
+      <div class="card-footer">
+        <button
+          class="upvote-btn ${isVoted ? 'voted' : ''}"
+          id="upvote-${confession.id}"
+          onclick="upvote('${confession.id}')"
+          title="${isVoted ? 'Already hyped' : 'Hype it up'}"
+        >
+          <span class="fire">🔥</span>
+          <span class="upvote-count" id="count-${confession.id}">${confession.upvotes}</span>
+          <span>hype</span>
+        </button>
+
+        <button
+          class="report-btn"
+          id="report-${confession.id}"
+          onclick="reportConfession('${confession.id}')"
+          title="Report"
+          ${isReported ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}
+        >⚑ report</button>
+      </div>
+    `;
+    return div;
+  }
+
+  // ── Prepend a new card to top of feed ─────────────────────────────────
+  function prependCard(confession) {
+    const feed = document.getElementById('feed');
+    const empty = feed.querySelector('.empty-state');
+    if (empty) empty.remove();
+    state.confessions.unshift(confession);
+    state.total += 1;
+    feed.insertBefore(makeCard(confession), feed.firstChild);
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────
+  async function submitConfession() {
+    const input = document.getElementById('confession-input');
+    const btn   = document.getElementById('submit-btn');
+    const text  = input.value.trim();
+    if (!text) { input.focus(); return; }
+
+    btn.disabled = true;
+    btn.classList.add('loading');
+
+    try {
+      const data = await api('POST', '/confessions', { text });
+      if (data?.data) {
+        input.value = '';
+        updateCharCount();
+        toast('Whisper sent! 👻', 'success');
+        // Card will arrive via WS; if WS is down, add manually
+        if (!state.ws || state.ws.readyState !== 1) prependCard(data.data);
+      } else {
+        const msg = data?.details?.[0]?.message || data?.message || 'Something went wrong';
+        toast(msg, 'error');
+      }
+    } catch {
+      toast('Network error — is the server running?', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    }
+  }
+
+  async function upvote(id) {
+    if (state.voted.has(id)) { toast('Already hyped this one! 🔥', 'info'); return; }
+
+    const btn   = document.getElementById(`upvote-${id}`);
+    const count = document.getElementById(`count-${id}`);
+    if (btn) btn.classList.add('voted');
+
+    state.voted.add(id);
+    sessionStorage.setItem('wn_voted', JSON.stringify([...state.voted]));
+
+    try {
+      const data = await api('PUT', `/confessions/${id}/upvote`);
+      if (data?.data && count) {
+        count.textContent = data.data.upvotes;
+        count.classList.remove('bump');
+        void count.offsetWidth; // force reflow for re-trigger
+        count.classList.add('bump');
+      }
+    } catch {
+      toast('Could not record your hype 😕', 'error');
+    }
+  }
+
+  async function reportConfession(id) {
+    if (state.reported.has(id)) return;
+    state.reported.add(id);
+    sessionStorage.setItem('wn_reported', JSON.stringify([...state.reported]));
+
+    const btn = document.getElementById(`report-${id}`);
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; }
+
+    try {
+      await api('PUT', `/confessions/${id}/report`);
+      toast('Reported to moderators', 'info');
+    } catch {
+      toast('Could not send report', 'error');
+    }
+  }
+
+  async function deleteConfession(id) {
+    if (!state.adminToken) return;
+    if (!confirm('Delete this confession?')) return;
+
+    try {
+      await api('DELETE', `/confessions/${id}`, null, state.adminToken);
+      const card = document.querySelector(`[data-id="${id}"]`);
+      if (card) {
+        card.classList.add('removing');
+        card.addEventListener('animationend', () => card.remove(), { once: true });
+      }
+      state.confessions = state.confessions.filter(c => c.id !== id);
+      state.total = Math.max(0, state.total - 1);
+      toast('Confession deleted', 'success');
+    } catch {
+      toast('Delete failed', 'error');
+    }
+  }
+
+  async function loadMore() {
+    state.page += 1;
+    const btn = document.getElementById('load-more-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+    await loadConfessions(false);
+    if (btn) btn.textContent = 'Load more whispers';
+  }
+
+  // ── Sort ───────────────────────────────────────────────────────────────
+  function setSort(sort) {
+    state.sort = sort;
+    document.getElementById('tab-newest').classList.toggle('active', sort === 'newest');
+    document.getElementById('tab-top').classList.toggle('active', sort === 'top');
+    loadConfessions(true);
+  }
+
+  // ── Character counter ──────────────────────────────────────────────────
+  function updateCharCount() {
+    const input  = document.getElementById('confession-input');
+    const el     = document.getElementById('char-count');
+    const n      = input.value.length;
+    el.textContent = `${n} / 500`;
+    el.className = 'char-count' + (n >= 480 ? ' limit' : n >= 380 ? ' warn' : '');
+  }
+  document.getElementById('confession-input').addEventListener('input', updateCharCount);
+  document.getElementById('confession-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitConfession();
+  });
+
+  // ── Rotating placeholders ──────────────────────────────────────────────
+  const PLACEHOLDERS = [
+    "I once pushed broken code to prod and blamed the internet...",
+    "I've been copy-pasting from Stack Overflow for three years and calling it engineering...",
+    "I still don't understand recursion but I nod confidently in code reviews...",
+    "I deleted the production database and said 'the server is slow today'...",
+    "My 'quick fix' has been in production for two years...",
+    "I write console.log everywhere and call it 'debugging'...",
+    "I've committed node_modules to Git. Twice.",
+    "I deployed on a Friday. I regret nothing. (I regret everything.)",
+  ];
+  let phIdx = 0;
+  const confessionInput = document.getElementById('confession-input');
+  setInterval(() => {
+    if (document.activeElement !== confessionInput && confessionInput.value === '') {
+      phIdx = (phIdx + 1) % PLACEHOLDERS.length;
+      confessionInput.placeholder = PLACEHOLDERS[phIdx];
+    }
+  }, 3500);
+
+  // ── WebSocket ──────────────────────────────────────────────────────────
+  function connectWS() {
+    const badge    = document.getElementById('live-badge');
+    const liveText = document.getElementById('live-text');
+
+    try { state.ws = new WebSocket(WS_URL); } catch { return; }
+
+    state.ws.onopen = () => {
+      badge.className    = 'live-badge connected';
+      liveText.textContent = 'Live';
+      state.wsDelay = 1000;
+    };
+
+    state.ws.onmessage = ({ data }) => {
+      try {
+        const { event, payload } = JSON.parse(data);
+
+        if (event === 'new_confession') {
+          const isScrolledDown = window.scrollY > 300;
+          if (isScrolledDown) {
+            state.newCount += 1;
+            updateNewBanner();
+          } else {
+            prependCard(payload);
+          }
+        }
+
+        if (event === 'upvote_updated') {
+          const count = document.getElementById(`count-${payload.id}`);
+          if (count && !state.voted.has(payload.id)) {
+            count.textContent = payload.upvotes;
+            count.classList.remove('bump');
+            void count.offsetWidth;
+            count.classList.add('bump');
+          }
+        }
+
+        if (event === 'confession_deleted') {
+          const card = document.querySelector(`[data-id="${payload.id}"]`);
+          if (card) {
+            card.classList.add('removing');
+            card.addEventListener('animationend', () => card.remove(), { once: true });
+          }
+        }
+      } catch { /* bad message — ignore */ }
+    };
+
+    state.ws.onclose = () => {
+      badge.className    = 'live-badge disconnected';
+      liveText.textContent = 'Offline';
+      // Exponential backoff: 1s → 2s → 4s → … → 30s max
+      state.wsDelay = Math.min(state.wsDelay * 2, 30000);
+      setTimeout(connectWS, state.wsDelay);
+    };
+
+    state.ws.onerror = () => state.ws.close();
+  }
+
+  // ── New whispers banner ────────────────────────────────────────────────
+  function updateNewBanner() {
+    const banner = document.getElementById('new-banner');
+    document.getElementById('new-banner-count').textContent = state.newCount;
+    banner.classList.toggle('visible', state.newCount > 0);
+  }
+
+  function scrollToTopAndRefresh() {
+    state.newCount = 0;
+    updateNewBanner();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    loadConfessions(true);
+  }
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY < 100 && state.newCount > 0) scrollToTopAndRefresh();
+  });
+
+  // ── Admin modal ────────────────────────────────────────────────────────
+  function openAdmin() {
+    document.getElementById('admin-modal').classList.add('open');
+    if (!state.adminToken) document.getElementById('admin-username').focus();
+  }
+  function closeAdmin() {
+    document.getElementById('admin-modal').classList.remove('open');
+  }
+  function handleModalClick(e) {
+    if (e.target === e.currentTarget) closeAdmin();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAdmin();
+  });
+
+  async function adminLogin() {
+    const u   = document.getElementById('admin-username').value.trim();
+    const p   = document.getElementById('admin-password').value;
+    const btn = document.getElementById('login-btn');
+    if (!u || !p) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Logging in…';
+
+    try {
+      const data = await api('POST', '/admin/login', { username: u, password: p });
+      if (data?.token) {
+        state.adminToken = data.token;
+        document.getElementById('admin-btn').classList.add('authed');
+        document.getElementById('admin-btn').textContent = '🛡️ Admin';
+        document.getElementById('admin-login-form').style.display = 'none';
+        document.getElementById('admin-logged-in').style.display  = 'block';
+        toast('Admin access granted 🛡️', 'success');
+        // Re-render feed to show delete buttons
+        const feed = document.getElementById('feed');
+        feed.querySelectorAll('.confession-card').forEach(card => {
+          const id = card.dataset.id;
+          const header = card.querySelector('.card-header');
+          if (!card.querySelector('.delete-btn')) {
+            const del = document.createElement('button');
+            del.className = 'delete-btn';
+            del.title = 'Delete';
+            del.textContent = '🗑️';
+            del.onclick = () => deleteConfession(id);
+            header.appendChild(del);
+          }
+        });
+      } else {
+        toast(data?.message || 'Login failed', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Login';
+      }
+    } catch {
+      toast('Could not reach server', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Login';
+    }
+  }
+
+  function adminLogout() {
+    state.adminToken = null;
+    document.getElementById('admin-btn').classList.remove('authed');
+    document.getElementById('admin-btn').textContent = '🔑 Admin';
+    document.getElementById('admin-login-form').style.display = 'block';
+    document.getElementById('admin-logged-in').style.display  = 'none';
+    document.getElementById('login-btn').disabled    = false;
+    document.getElementById('login-btn').textContent = 'Login';
+    document.getElementById('admin-password').value  = '';
+    closeAdmin();
+    document.querySelectorAll('.delete-btn').forEach(b => b.remove());
+    toast('Logged out', 'info');
+  }
+
+  // ── Toasts ─────────────────────────────────────────────────────────────
+  function toast(msg, type = 'info') {
+    const icons = { success: '✅', error: '❌', info: '💜' };
+    const container = document.getElementById('toasts');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span class="toast-icon">${icons[type]}</span><span class="toast-msg">${escHtml(msg)}</span>`;
+    container.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('out');
+      el.addEventListener('animationend', () => el.remove(), { once: true });
+    }, 3500);
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────
+  loadConfessions(true);
+  connectWS();
+</script>
+</body>
+</html>

@@ -1200,6 +1200,7 @@
       const data = await api('POST', '/admin/login', { username: u, password: p });
       if (data?.token) {
         state.adminToken = data.token;
+        localStorage.setItem('wn_admin_token', data.token);
         document.getElementById('admin-btn').classList.add('authed');
         document.getElementById('admin-btn').textContent = '🛡️ Admin';
         document.getElementById('admin-login-form').style.display = 'none';
@@ -1233,6 +1234,7 @@
 
   function adminLogout() {
     state.adminToken = null;
+    localStorage.removeItem('wn_admin_token');
     document.getElementById('admin-btn').classList.remove('authed');
     document.getElementById('admin-btn').textContent = '🔑 Admin';
     document.getElementById('admin-login-form').style.display = 'block';
@@ -1260,6 +1262,19 @@
   }
 
   // ── Boot ───────────────────────────────────────────────────────────────
+  // Restore admin session if a valid (non-expired) token was saved
+  (function restoreAdminSession() {
+    const saved = localStorage.getItem('wn_admin_token');
+    if (!saved) return;
+    try {
+      const payload = JSON.parse(atob(saved.split('.')[1]));
+      if (payload.exp * 1000 < Date.now()) { localStorage.removeItem('wn_admin_token'); return; }
+    } catch { localStorage.removeItem('wn_admin_token'); return; }
+    state.adminToken = saved;
+    document.getElementById('admin-btn').classList.add('authed');
+    document.getElementById('admin-btn').textContent = '🛡️ Admin';
+  })();
+
   loadConfessions(true);
   connectWS();
 </script>

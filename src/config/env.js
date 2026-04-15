@@ -26,6 +26,5 @@ export const env = {
   ADMIN_USERNAME:      required("ADMIN_USERNAME"),
   ADMIN_PASSWORD:      required("ADMIN_PASSWORD"),
 
-  // Optional — Discord moderation webhook
   WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || "whispernet-internal-secret",
 };

@@ -1,471 +1,394 @@
 # WhisperNet — 120-Minute Backend Masterclass
+## Speaker Notes
 
-## The Gist Rule
-> **First time for any pattern → write from scratch (teaches the concept)**
-> **Same pattern, second time → paste skeleton, write only the logic**
-> **Pure boilerplate / utilities → paste complete, explain while pasting, move on**
-
----
-
-## Pre-Session Checklist
-- [ ] Deploy full WhisperNet on Render / Railway (the "hook" server)
-- [ ] Generate QR code pointing to the deployed frontend URL
-- [ ] Open your Gist URL in a pinned browser tab
-- [ ] MongoDB Atlas cluster ready (or local `mongod` running)
-- [ ] Clone `whispernet-starter` locally as your starting point
-- [ ] Test `npm run dev` on the starter — confirm health check works
+> Rule 1 — First time for a pattern → write from scratch
+> Rule 2 — Same pattern again → paste gist, write only the ✍️ line(s) live
+> Rule 3 — Pure boilerplate → paste complete, talk while typing
 
 ---
 
-## Session Flow
+## ── SPEAKER 1 ──────────────────────────────────────────────
 
-### ⏱ 0:00 – 0:05 | The Hook (5 min)
-- Project the QR code. Let students scan and start posting confessions.
-- Confessions appear on the projector screen in real time via WebSocket.
-- **"Right now you are using the magic. In two hours, you will know exactly how to build it."**
+### Phase 1 · 0:00 – 0:08 · Project Init
 
----
-
-### ⏱ 0:05 – 0:15 | Core Theory (10 min)
-No code yet — just talk.
-
-**What is a server?**
-> A computer listening on a port, waiting for a knock.
-> Request arrives → server processes → response goes back.
-
-**API Types:**
-| Type | Analogy | Use case |
-|------|---------|----------|
-| **REST** | Restaurant menu — fixed dishes | Industry standard · what we build today |
-| **GraphQL** | Custom order — ask only for what you need | Avoid over-fetching on complex UIs |
-| **gRPC** | Internal walkie-talkie — binary, fast | Microservice-to-microservice |
-
-**HTTP Verbs → CRUD:**
-`GET` = Read · `POST` = Create · `PUT/PATCH` = Update · `DELETE` = Delete
-
----
-
-### ⏱ 0:15 – 0:20 | Setup (5 min)
 ```bash
-git clone <starter-repo-url>
-cd whispernet-starter
-npm install
-cp .env.example .env
-# Edit .env: fill in MONGODB_URI, JWT_SECRET, WEBHOOK_SECRET
-npm run dev
-# ✅  WhisperNet running → http://localhost:3000
+mkdir whispernet && cd whispernet
+npm init -y
+npm install express
 ```
-Hit `GET /health` in Postman → `{ status: "ok" }` ✅
+
+**Write `server.js` live** (from scratch, line by line):
+```js
+import app from "./src/app.js";
+app.listen(3000, () => console.log("WhisperNet → http://localhost:3000"));
+```
+
+**Write `src/app.js` live** (from scratch):
+```js
+import express from "express";
+const app = express();
+app.use(express.json());
+export default app;
+```
+
+**Write `.env.example` live**:
+```
+PORT=3000
+NODE_ENV=development
+MONGODB_URI=
+JWT_SECRET=
+JWT_EXPIRES_IN=2h
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
+WEBHOOK_SECRET=
+```
+Copy `.env.example` → `.env`, fill in values.
+
+✅ `node server.js` → `WhisperNet → http://localhost:3000`
+
+> *"A server is just a program listening on a port waiting for requests.
+> Request in → process → response out."*
 
 ---
 
-### ⏱ 0:20 – 0:30 | Config Layer (10 min)
-**Strategy → PASTE COMPLETE, explain line by line while pasting**
+### Phase 2 · 0:08 – 0:18 · Config + DB
 
-**`src/config/env.js`** — paste `01-config-env.js`
-> *"Every `process.env` read in the whole app goes through here.
-> If a required variable is missing, the server crashes at boot — not 10 minutes later during a live request."*
+```bash
+npm install dotenv mongoose
+```
 
-**`src/config/db.js`** — paste `01-config-db.js`
-> *"We `await connectDB()` before calling `server.listen()`.
-> No database = no point accepting traffic."*
+**`src/config/env.js`** → PASTE COMPLETE from `01-env.js`
+> *"Every process.env access in the whole app goes through here.
+> If a required var is missing the server crashes at boot — fast failure
+> beats a mysterious crash 10 minutes into a live request."*
 
-**`src/utils/AppError.js` + `catchAsync.js`** — paste `01-utils.js`
-> *"AppError bundles a message with an HTTP status code.
-> catchAsync means zero try/catch boilerplate in every controller — rejected promises auto-forward to our error handler."*
+**`src/config/db.js`** → PASTE COMPLETE from `01-db.js`
+> *"We await connectDB() before listening. No DB = no point accepting traffic."*
 
-**Update `server.js`** → paste **Stage 2** block from `00-server-FINAL.js`
+**Update `server.js` → Stage 2** (from `00-server.js` — paste and replace):
+- Add `dotenv/config` import
+- Wrap listen in async `bootstrap()` with `await connectDB()`
 
-Test: `npm run dev` → `[DB] Connected → …` ✅
+Walk through MongoDB Atlas: cluster → Connect → Drivers → copy URI → paste in `.env`
+
+✅ `node server.js` → `[DB] Connected → ...atlas...`
 
 ---
 
-### ⏱ 0:30 – 0:45 | The Model (15 min)
-**Strategy → WRITE FROM SCRATCH**
+### Phase 3 · 0:18 – 0:23 · Utils
 
-Create `src/models/confession.model.js`. Write each part live:
+**Two files** → PASTE COMPLETE from `01-utils.js`:
+- `src/utils/AppError.js`
+- `src/utils/catchAsync.js`
 
-```javascript
-// Step 1 — import
+> *"AppError bundles a message with a status code. Services throw it, the
+> error handler catches it. catchAsync = zero try/catch in every controller —
+> rejected promises auto-forward to next(err)."*
+
+---
+
+### Phase 4 · 0:23 – 0:48 · First Full API — GET + POST /confessions
+
+**Write every file from scratch. This is the core teaching moment.**
+Reference `02-model.js` in a second tab — glance only, don't copy.
+
+#### Step 1 · Model
+
+**Write `src/models/confession.model.js` live:**
+```js
 import mongoose from "mongoose";
 
-// Step 2 — define the schema (shape of a document)
 const confessionSchema = new mongoose.Schema(
   {
     text:    { type: String, required: true, trim: true, maxlength: 500 },
     upvotes: { type: Number, default: 0 },
     reports: { type: Number, default: 0 },
-    // flagged / hidden / featured  ← leave these out now, add in Webhook phase
+    // flagged / hidden / featured  ← add in Phase 9 (Webhooks)
   },
   {
-    timestamps: true,          // free createdAt + updatedAt
+    timestamps: true,
     toJSON: {
       virtuals: true,
-      transform: (_, ret) => { ret.id = ret._id; delete ret._id; delete ret.__v; return ret; }
+      transform: (_, ret) => { ret.id = ret._id; delete ret._id; delete ret.__v; return ret; },
     },
   }
 );
 
-// Step 3 — indexes (pre-sort for fast queries at scale)
 confessionSchema.index({ createdAt: -1 });
 confessionSchema.index({ upvotes:   -1 });
 
-// Step 4 — compile + export
 const Confession = mongoose.model("Confession", confessionSchema);
 export default Confession;
 ```
+> *"Schema = the contract for every document in the collection.
+> Constraints here are a second safety net — the validator catches bad input first."*
 
-> *"This schema is the contract for every document in the confessions collection.
-> Constraints here are a second safety net — the validator catches bad input first,
-> Mongoose catches anything that slips through."*
+#### Step 2 · Service
 
-📎 Reference: `02-confession.model.js` if running behind.
-
----
-
-### ⏱ 0:45 – 1:00 | Service + Controller + Routes — First Time (15 min)
-**Strategy → WRITE FROM SCRATCH (first iteration of each layer)**
-
-**`src/services/confession.service.js`**
-Write `getAll()` and `create()` live:
-```javascript
-import Confession from "../models/confession.model.js";
+**Write `src/services/confession.service.js` live** — `getAll()` then `create()`:
+```js
+import Confession  from "../models/confession.model.js";
 import { AppError } from "../utils/AppError.js";
+
+const SORT_MAP = { newest: { createdAt: -1 }, top: { upvotes: -1 } };
 
 export const confessionService = {
   async getAll({ sort = "newest", page = 1, limit = 10 }) {
-    // write: SORT_MAP, skip calc, Promise.all([find, count])
+    const sortQuery = SORT_MAP[sort] ?? SORT_MAP.newest;
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      Confession.find({}).sort(sortQuery).skip(skip).limit(limit),
+      Confession.countDocuments({}),
+    ]);
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   },
+
   async create(text) {
     return Confession.create({ text });
   },
 };
 ```
-> *"Service = pure data logic. No req, no res. Just arguments in, data out.
-> This is what makes services independently testable."*
+> *"Service = pure data logic. No req, no res. Arguments in, data out.
+> Testable without spinning up an HTTP server."*
 
-**`src/controllers/confession.controller.js`**
-Paste `04-CONTROLLER.skeleton.js`, write `getAll` and `create` bodies live:
-```javascript
-getAll: catchAsync(async (req, res) => {
-  const page  = Math.max(1, parseInt(req.query.page)  || 1);
-  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
-  const result = await confessionService.getAll({ sort: req.query.sort, page, limit });
-  res.json(result);
-}),
-create: catchAsync(async (req, res) => {
-  const confession = await confessionService.create(req.body.text);
-  res.status(201).json({ data: confession });
-}),
+#### Step 3 · Controller
+
+**Write `src/controllers/confession.controller.js` live:**
+```js
+import { confessionService } from "../services/confession.service.js";
+import { catchAsync }        from "../utils/catchAsync.js";
+
+export const confessionController = {
+  getAll: catchAsync(async (req, res) => {
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 10);
+    const result = await confessionService.getAll({ sort: req.query.sort, page, limit });
+    res.json(result);
+  }),
+
+  create: catchAsync(async (req, res) => {
+    const confession = await confessionService.create(req.body.text);
+    res.status(201).json({ data: confession });
+  }),
+};
 ```
-> *"Controller's only job: speak HTTP. Pull from req, hand to service, wrap the response."*
+> *"Controller's only job: speak HTTP. Extract from req, call service, send response.
+> No DB calls here — that's the service's territory."*
 
-**`src/routes/confession.routes.js`**
-Paste `05-ROUTES.skeleton.js`, write the two route lines live:
-```javascript
+#### Step 4 · Routes
+
+**Paste `05-routes.js`** → then write the two lines live:
+```js
 router.get("/",  confessionController.getAll);
 router.post("/", confessionController.create);
 ```
-Mount in `app.js`:
-```javascript
+
+#### Step 5 · Wire into app.js (Stage 2 — add 3 lines)
+```js
+import cors             from "cors";
 import confessionRoutes from "./routes/confession.routes.js";
+// ...
+app.use(cors());
 app.use("/confessions", confessionRoutes);
 ```
 
-Test: `GET /confessions` → `[]` · `POST /confessions` → new document ✅
+✅ `GET /confessions` → `{ data: [], meta: ... }`
+✅ `POST /confessions { "text": "first one" }` → `{ data: { id, text, ... } }`
+
+> *"Promise.all runs both DB queries at the same time — one round-trip instead of two."*
 
 ---
 
-### ⏱ 1:00 – 1:07 | Pagination + Sorting (7 min)
-**Strategy → ADD lines into the existing `getAll()` service method**
+### Phase 5 · 0:48 – 1:05 · Remaining Endpoints (upvote, report, delete)
 
-Show `req.query` live in Postman. Then fill in the body:
-```javascript
-const SORT_MAP = { newest: { createdAt: -1 }, top: { upvotes: -1 } };
-const sortQuery = SORT_MAP[sort] ?? SORT_MAP.newest;
-const skip      = (page - 1) * limit;
-const filter    = { hidden: false };   // write this as a placeholder for now
+**Service** → PASTE from `03-service-additions.js` (below getAll + create)
+For each of the 3 methods, type the ✍️ line live, then move on.
 
-const [data, total] = await Promise.all([
-  Confession.find(filter).sort(sortQuery).skip(skip).limit(limit),
-  Confession.countDocuments(filter),
-]);
-return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
-```
-> *"`Promise.all` runs both DB queries at the same time instead of waiting for each in turn.
-> One round-trip instead of two."*
+**Controller** → PASTE from `04-controller-additions.js` (below getAll + create)
+For each of the 3 handlers, type the ✍️ line live, then move on.
 
-Test: `GET /confessions?sort=top&page=1&limit=2` ✅
-
----
-
-### ⏱ 1:07 – 1:13 | Upvote + Delete Stub (6 min)
-**Strategy → paste `03-SERVICE.skeleton.js` as reference, write bodies live**
-
-Add `upvote()` and `remove()` to the existing service:
-```javascript
-async upvote(id) {
-  const doc = await Confession.findByIdAndUpdate(id, { $inc: { upvotes: 1 } }, { new: true });
-  if (!doc) throw new AppError(`Confession '${id}' not found.`, 404);
-  return doc;
-},
-async remove(id) {
-  const doc = await Confession.findByIdAndDelete(id);
-  if (!doc) throw new AppError(`Confession '${id}' not found.`, 404);
-  return doc;
-},
-```
-> *"`$inc` is atomic — safe when 100 users upvote the same confession at the same time.
-> `{ new: true }` returns the updated document, not the original."*
-
-Add matching controller methods (fill skeletons) and routes:
-```javascript
+**Routes** → add to `confession.routes.js` (write live):
+```js
 router.put("/:id/upvote", confessionController.upvote);
-router.delete("/:id",     confessionController.remove);  // no auth guard yet
+router.put("/:id/report", confessionController.report);
+router.delete("/:id",     confessionController.remove);  // no auth yet
 ```
 
-Test: `PUT /confessions/:id/upvote` → upvotes increments ✅
+✅ `PUT /confessions/:id/upvote` → upvotes increments
+✅ `PUT /confessions/:id/report` → reports increments
+✅ `DELETE /confessions/:id` → 204 (no auth needed yet)
+
+> *"$inc is atomic. If 1000 users upvote the same confession simultaneously,
+> every single increment lands. No lost updates."*
 
 ---
 
-### ⏱ 1:13 – 1:18 | Validation (5 min)
-**Strategy → PASTE COMPLETE from `06-validate.middleware.js`**
+### Phase 6 · 1:05 – 1:10 · Validation
 
-Create `src/validators/confession.validator.js` + `src/middleware/validate.middleware.js`.
+```bash
+npm install express-validator
+```
 
-Update POST route to use the validation chain:
-```javascript
+**Paste COMPLETE from `06-validation.js`** → creates:
+- `src/middleware/validate.middleware.js`
+- `src/validators/confession.validator.js`
+
+**Update POST route (1 line)**:
+```js
 router.post("/", createConfessionRules, validate, confessionController.create);
 ```
+Add the two imports at the top of confession.routes.js.
 
-> *"Middleware is a checkpoint assembly line.
-> `createConfessionRules` runs the checks, `validate` reads the results.
-> If anything failed, it short-circuits with 422 — the controller never runs."*
+✅ `POST /confessions {}` → 422 `{ error: true, details: [...] }`
 
-Demo: `POST /confessions` with empty body → `422 Validation failed` + field details ✅
+> *"Two layers: validator catches bad input at the HTTP boundary,
+> Mongoose schema catches anything that slips through at the DB boundary."*
 
 ---
 
-### ⏱ 1:18 – 1:33 | Auth — JWT (15 min)
-**Strategy → paste `07-auth.skeleton.js`, write all logic bodies live**
+## ── SPEAKER 2 ──────────────────────────────────────────────
 
-**Part A — `src/services/auth.service.js`**
-Paste the skeleton, write both method bodies:
-```javascript
-login(username, password) {
-  if (username !== env.ADMIN_USERNAME || password !== env.ADMIN_PASSWORD)
-    throw new AppError("Invalid credentials.", 401);
-  return jwt.sign({ username, role: "admin" }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
-},
-verifyToken(token) {
-  try   { return jwt.verify(token, env.JWT_SECRET); }
-  catch { throw new AppError("Invalid or expired token.", 401); }
-},
+### Phase 7 · 1:10 – 1:28 · Auth — JWT + Cookie
+
+```bash
+npm install jsonwebtoken cookie-parser
 ```
 
-**Part B — Admin controller + routes**
-Paste complete from `07-auth.skeleton.js`. Mount:
-```javascript
-app.use("/admin", adminRoutes);
-```
+**From `07-auth.js` paste Parts A, B, C in order:**
 
-**Part C — `src/middleware/auth.middleware.js`**
-Paste skeleton, write `verifyAdmin` body live:
-```javascript
-const authHeader = req.headers["authorization"];
-if (!authHeader?.startsWith("Bearer "))
-  return res.status(401).json({ error: true, message: "No token provided." });
+**Part A** → `src/services/auth.service.js` (skeleton)
+Write `login()` and `verifyToken()` bodies live. Then:
+1. `POST /admin/login` with valid creds → copy the token
+2. Paste token at **jwt.io** live on projector → show payload is readable
+> *"The payload is just base64 — anyone can decode it. Never put passwords in a JWT."*
 
-const decoded = authService.verifyToken(authHeader.split(" ")[1]);
-if (decoded.role !== "admin")
-  return res.status(403).json({ error: true, message: "Admin role required." });
+**Part B** → `src/middleware/auth.middleware.js` (skeleton)
+Write `verifyAdmin` body live. Concept: reads from cookie, not header.
+> *"localStorage = any injected JS can steal the token. httpOnly cookie = even
+> malicious scripts can't read it. The browser stores and sends it automatically."*
 
-req.user = decoded;
-next();
-```
-Apply to the DELETE route:
-```javascript
+**Part C** → `admin.controller.js` + `admin.routes.js` (paste complete)
+Write the `res.cookie(...)` line live in `login()`.
+
+**Update app.js → Stage 3** (from `00-app.js` — add 4 changes).
+
+✅ `POST /admin/login` → cookie appears in DevTools → Application → Cookies
+✅ `GET /admin/verify` → `{ username, role }` while logged in
+✅ `POST /admin/logout` → cookie cleared
+
+---
+
+### Phase 7b · 1:28 – 1:33 · AuthZ — protect delete
+
+From `07-auth.js` Part D — 2 changes to `confession.routes.js`:
+
+```js
+// Add import:
+import { verifyAdmin } from "../middleware/auth.middleware.js";
+
+// Update delete:
 router.delete("/:id", verifyAdmin, confessionController.remove);
 ```
 
-**Live demo flow:**
-1. `POST /admin/login` → copy the token
-2. Paste token at **jwt.io** → decode on the projector — show the payload is visible
-3. `DELETE /confessions/:id` with `Authorization: Bearer <token>` → 204 ✅
-4. Same request without the header → 401 ✅
+✅ `DELETE /confessions/:id` (no cookie) → 401
+✅ `DELETE /confessions/:id` (logged in) → 204
 
-> *"Authentication = proving WHO you are (showing your ID at the door).
-> Authorization = proving WHAT you're allowed to do (getting into the VIP room)."*
-
-> *"Notice jwt.io decoded the payload without knowing our secret. The payload is NOT secret.
-> Never put passwords or sensitive data inside a JWT."*
+> *"Authentication = WHO you are. Authorization = WHAT you're allowed to do.
+> The middleware chain is a checkpoint: if verifyAdmin rejects, controller never runs."*
 
 ---
 
-### ⏱ 1:33 – 1:43 | WebSockets (10 min)
-**Strategy → PASTE COMPLETE from `08-websocket.broadcast.js`**
+### Phase 8 · 1:33 – 1:43 · WebSocket
 
-Create `src/websocket/broadcast.js` — paste the file.
-
-**Update `server.js`** → paste **Stage 3** block from `00-server-FINAL.js`
-*(wraps app in `http.createServer`, calls `initWebSocket`)*
-
-Add `broadcast()` calls into the existing controller — just three lines:
-```javascript
-// inside create  (after confession is saved):
-broadcast("new_confession", confession);
-
-// inside upvote  (after DB update):
-broadcast("upvote_updated", { id: confession.id, upvotes: confession.upvotes });
-
-// inside remove  (after DB delete):
-broadcast("confession_deleted", { id: req.params.id });
+```bash
+npm install ws
 ```
 
-**Demo:** Open the frontend in two browser tabs side by side.
-Post a confession in tab 1 → card appears in tab 2 instantly, no refresh.
-Upvote in tab 1 → counter updates in tab 2 in real time.
+**`src/websocket/broadcast.js`** → PASTE COMPLETE from `08-websocket.js`
 
-> *"REST is a walkie-talkie — you press the button, you speak, you release, the line closes.
-> WebSocket is a phone call — the connection stays open and both sides can talk any time."*
+**Update server.js → Stage 3** (from `00-server.js` — replace file).
+
+**Add 3 lines to `confession.controller.js`**:
+```js
+import { broadcast } from "../websocket/broadcast.js";
+// inside create:   broadcast("new_confession", confession);
+// inside upvote:   broadcast("upvote_updated", { id: confession.id, upvotes: confession.upvotes });
+// inside remove:   broadcast("confession_deleted", { id: req.params.id });
+```
+
+✅ Open two browser tabs → POST in one → card appears in the other instantly
+
+> *"REST = walkie-talkie. Speak, line closes. Done.
+> WebSocket = phone call. Line stays open, both sides talk any time."*
 
 ---
 
-### ⏱ 1:43 – 1:53 | Webhooks (10 min)
-**Strategy → PASTE COMPLETE from `09-internal.webhook.js`**
+### Phase 9 · 1:43 – 1:53 · Webhooks
 
-**Concept first (2 min):**
-> *"A normal API is us knocking on someone's door to ask for data.
-> A webhook is the opposite — we give someone our address and they knock on OUR door when something happens.
-> Real examples: GitHub notifies your CI/CD when you push. Stripe notifies your server when a payment succeeds.
-> Today we build a self-contained version — the app fires events to itself."*
+No new packages.
 
-**Create the three files (paste from `09-internal.webhook.js`):**
-- `src/webhooks/internal.webhook.js` — the `fireWebhook()` fire function
-- `src/controllers/webhook.controller.js` — the receiver + event log
-- `src/routes/webhook.routes.js` — mounts GET /events and POST /receive
+**Paste COMPLETE from `09-webhooks.js`** → creates 3 files + 4 updates to existing files (all listed at the top of the gist).
 
-**Mount in `app.js`:**
-```javascript
-app.use("/webhooks", webhookRoutes);
+✅ Demo sequence:
+```
+POST /confessions { "text": "urgent help needed" }
+  terminal: [Webhook] ✓ Fired: confession.flagged → 200
+  terminal: [Webhook] Confession xxx flagged ← keyword: "urgent"
+
+GET /webhooks/events  →  full event log with timestamps
+
+PUT /confessions/:id/report  × 3
+  → 3rd report fires confession.reported → confession hidden from feed
+
+PUT /confessions/:id/upvote  × 10
+  → 10th upvote fires confession.trending → featured: true in DB
 ```
 
-**Add status fields to the model** (paste from `02-confession.model.js` bottom section):
-```javascript
-flagged:  { type: Boolean, default: false },
-hidden:   { type: Boolean, default: false },
-featured: { type: Boolean, default: false },
-```
-
-**Also add `filter: { hidden: false }` in the service `getAll()`.**
-
-**Wire triggers into the controller** — add these after the service calls:
-```javascript
-// inside create — keyword detection:
-const FLAGGED_KEYWORDS = ["urgent", "help", "danger", "emergency"];
-const match = FLAGGED_KEYWORDS.find(w => confession.text.toLowerCase().includes(w));
-if (match) fireWebhook("confession.flagged", { id: confession.id, keyword: match });
-
-// inside upvote — trending threshold:
-if (confession.upvotes === 10)
-  fireWebhook("confession.trending", { id: confession.id, upvotes: confession.upvotes });
-
-// inside report — auto-hide threshold:
-if (confession.reports >= 3)
-  fireWebhook("confession.reported", { id: confession.id, reports: confession.reports });
-```
-
-**Live demo sequence:**
-```
-1. POST /confessions  { "text": "urgent the server is on fire" }
-   → terminal: [Webhook] ✓ Fired: confession.flagged → 200
-   → terminal: [Webhook] Confession xxx flagged ← keyword: "urgent"
-
-2. GET /webhooks/events
-   → full event log with timestamps
-
-3. PUT /confessions/:id/report  × 3
-   → third report fires confession.reported
-   → confession disappears from GET /confessions feed (hidden: true)
-
-4. PUT /confessions/:id/upvote  × 10
-   → tenth upvote fires confession.trending → featured: true in DB
-```
-
-> *"Notice the secret header `X-Webhook-Secret`.
-> Stripe, GitHub, Shopify all use the same pattern — they sign webhook requests
-> so your receiver can reject fakes before processing them."*
+> *"Webhook = reverse API. Normal API: you knock on their door.
+> Webhook: you give them your address and they knock on yours when something happens.
+> Stripe, GitHub, Shopify all use this exact pattern."*
 
 ---
 
-### ⏱ 1:53 – 2:00 | Final Polish + Wrap-up (7 min)
-**Strategy → PASTE COMPLETE `10-error.middleware.js`, explain each section**
+### Phase 10 · 1:53 – 2:00 · Error Handling + Wrap-up
 
-Create `src/middleware/error.middleware.js`. Register last in `app.js`:
-```javascript
-app.use(errorHandler);
+**`src/middleware/error.middleware.js`** → PASTE COMPLETE from `10-error.js`
+
+**Update app.js → Stage 5** (add 2 lines last):
+```js
+import { errorHandler } from "./middleware/error.middleware.js";
+app.use(errorHandler); // must be the last middleware
 ```
 
-Deliberately trigger each error type live:
+✅ Trigger each error type live:
 ```
-GET /confessions/not-a-valid-id   → CastError → 400 (clean message, no stack trace)
-POST /confessions (empty body)    → 422 from validator
-DELETE /no-such-route             → 404 catch-all
+GET /confessions/not-a-valid-id  → 400 CastError (clean message)
+POST /confessions {}             → 422 validator
+GET /no-such-route               → 404 catch-all
 ```
 
-**CORS** *(already in app.js — just point to it)*
-> *"`app.use(cors())` is the one line that stops 90% of beginner headaches.
-> Without it, the browser silently blocks your frontend from talking to your backend.
-> In production, replace the wildcard with your actual domain."*
-
-**Environment variables** *(show the .env file)*
-> *"Why is `JWT_SECRET` not hardcoded? Because this file is in `.gitignore`.
-> If you push a secret to a public GitHub repo it gets scraped by bots within minutes.
-> `WEBHOOK_SECRET` works the same way — it's what stops random callers from hitting /webhooks/receive."*
-
-**Architecture recap** — draw/show this diagram:
+**Architecture diagram on the board:**
 ```
 Browser
   │
-  ├─ REST  → Routes → [Validator] → [Auth?] → Controller → Service → MongoDB
-  │                                                │
-  │                                         fireWebhook()
-  │                                                │
-  │                                         POST /webhooks/receive
-  │                                                │
-  │                                         receiver updates DB
+  ├─ REST   Routes → [Validate?] → [Auth?] → Controller → Service → MongoDB
+  │                                               │
+  │                                        fireWebhook()
+  │                                               │
+  │                                   POST /webhooks/receive
+  │                                               │
+  │                                     receiver updates DB
   │
-  └─ WS   → broadcast() pushes events to all connected tabs in real time
+  └─ WS    broadcast() → all connected tabs in real time
 ```
 
 ---
 
-## Gist Files Quick Reference
+## ⏱ Timing Buffer
 
-| # | File | Type | When to use |
-|---|------|------|-------------|
-| 00 | `00-server-FINAL.js` | Staged reference | Update server.js at Stage 2 (DB) and Stage 3 (WS) |
-| 01 | `01-config-env.js` | Paste complete | Config phase |
-| 01 | `01-config-db.js` | Paste complete | Config phase |
-| 01 | `01-utils.js` | Paste complete | Config phase |
-| 02 | `02-confession.model.js` | Write scratch / reference | Model phase (add status fields in Webhook phase) |
-| 03 | `03-SERVICE.skeleton.js` | Paste skeleton | Second+ service |
-| 03 | `03-confession.service.js` | Reference | If running behind on service |
-| 04 | `04-CONTROLLER.skeleton.js` | Paste skeleton | Controller phase (comments guide WS + webhook wiring) |
-| 05 | `05-ROUTES.skeleton.js` | Paste skeleton | Routes phase |
-| 06 | `06-validate.middleware.js` | Paste complete | Validation phase |
-| 07 | `07-auth.skeleton.js` | Paste skeleton | Auth phase — write logic live |
-| 08 | `08-websocket.broadcast.js` | Paste complete | WebSocket phase |
-| 09 | `09-internal.webhook.js` | Paste complete | Webhook phase |
-| 10 | `10-error.middleware.js` | Paste complete | Polish phase |
-
----
-
-## Timing Buffer Guide
-
-| If you're behind… | Skip / compress |
-|---|---|
-| 5 min | Compress pagination explanation — paste service from `03-confession.service.js` |
-| 10 min | Skip writing auth middleware from scratch — paste complete from `07-auth.skeleton.js` |
-| 15 min | Skip report route entirely — still demo upvote webhook trigger |
-| 20 min | Paste full controller from gist reference, explain what's inside |
+| Behind by | Do this |
+|-----------|---------|
+| 5 min | For remaining APIs, skip writing service lines live — just uncomment the ✍️ hints |
+| 10 min | Skip writing auth middleware from scratch — paste Part B complete as-is |
+| 15 min | Skip report endpoint entirely — still demo upvote webhook trigger |
+| 20 min | Paste full controller reference, explain what's inside without live coding |

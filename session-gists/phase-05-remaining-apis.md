@@ -16,20 +16,20 @@ Add these three methods inside the `confessionService` object, after `create`.
 
 > ✍️ **Type this line yourself first:**
 > ```js
-> const doc = await Confession.findByIdAndUpdate(id, { $inc: { upvotes: 1 } }, { new: true });
+> const confession = await Confession.findByIdAndUpdate(id, { $inc: { upvotes: 1 } }, { new: true });
 > ```
 
 Complete method:
 
 ```js
 async upvote(id) {
-  const doc = await Confession.findByIdAndUpdate(
+  const confession = await Confession.findByIdAndUpdate(
     id,
     { $inc: { upvotes: 1 } },
     { new: true }
   );
-  if (!doc) throw new AppError(`Confession '${id}' not found.`, 404);
-  return doc;
+  if (!confession) throw new AppError(`Confession '${id}' not found.`, 404);
+  return confession;
 },
 ```
 
@@ -42,20 +42,20 @@ async upvote(id) {
 
 > ✍️ **Type this line yourself first:**
 > ```js
-> const doc = await Confession.findByIdAndUpdate(id, { $inc: { reports: 1 } }, { new: true });
+> const confession = await Confession.findByIdAndUpdate(id, { $inc: { reports: 1 } }, { new: true });
 > ```
 
 Complete method:
 
 ```js
 async report(id) {
-  const doc = await Confession.findByIdAndUpdate(
+  const confession = await Confession.findByIdAndUpdate(
     id,
     { $inc: { reports: 1 } },
     { new: true }
   );
-  if (!doc) throw new AppError(`Confession '${id}' not found.`, 404);
-  return doc;
+  if (!confession) throw new AppError(`Confession '${id}' not found.`, 404);
+  return confession;
 },
 ```
 
@@ -65,16 +65,16 @@ async report(id) {
 
 > ✍️ **Type this line yourself first:**
 > ```js
-> const doc = await Confession.findByIdAndDelete(id);
+> const confession = await Confession.findByIdAndDelete(id);
 > ```
 
 Complete method:
 
 ```js
 async remove(id) {
-  const doc = await Confession.findByIdAndDelete(id);
-  if (!doc) throw new AppError(`Confession '${id}' not found.`, 404);
-  return doc;
+  const confession = await Confession.findByIdAndDelete(id);
+  if (!confession) throw new AppError(`Confession '${id}' not found.`, 404);
+  return confession;
 },
 ```
 

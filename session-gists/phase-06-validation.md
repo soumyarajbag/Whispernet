@@ -21,8 +21,10 @@ import { body } from "express-validator";
 export const createConfessionRules = [
   body("text")
     .trim()
-    .notEmpty().withMessage("Confession text cannot be empty.")
-    .isLength({ max: 500 }).withMessage("Must be 500 characters or fewer."),
+    .notEmpty()
+    .withMessage("Confession text cannot be empty.")
+    .isLength({ max: 500 })
+    .withMessage("Confession must be 500 characters or fewer."),
 ];
 ```
 

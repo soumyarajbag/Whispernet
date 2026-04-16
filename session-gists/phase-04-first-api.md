@@ -19,10 +19,14 @@ const confessionSchema = new mongoose.Schema(
       type:      String,
       required:  [true, "Confession text is required"],
       trim:      true,
-      maxlength: [500, "Must be 500 characters or fewer"],
+      maxlength: [500, "Confession must be 500 characters or fewer"],
     },
-    upvotes: { type: Number, default: 0 },
-    reports: { type: Number, default: 0 },
+    upvotes: { type: Number, default: 0, min: [0, "Upvotes cannot be negative"] },
+    reports: { type: Number, default: 0, min: [0, "Reports cannot be negative"] },
+    // Set automatically by the internal webhook receiver — never by the client
+    flagged:  { type: Boolean, default: false }, // contains sensitive keywords
+    hidden:   { type: Boolean, default: false }, // auto-hidden after 3 reports
+    featured: { type: Boolean, default: false }, // trending (10+ upvotes)
   },
   {
     timestamps: true,
@@ -71,10 +75,11 @@ export const confessionService = {
   async getAll({ sort = "newest", page = 1, limit = 10 }) {
     const sortQuery = SORT_MAP[sort] ?? SORT_MAP.newest;
     const skip      = (page - 1) * limit;
+    const filter    = { hidden: false }; // webhook receiver sets this to true on 3+ reports
 
     const [data, total] = await Promise.all([
-      Confession.find({}).sort(sortQuery).skip(skip).limit(limit),
-      Confession.countDocuments({}),
+      Confession.find(filter).sort(sortQuery).skip(skip).limit(limit),
+      Confession.countDocuments(filter),
     ]);
 
     return {
@@ -108,9 +113,10 @@ export const confessionController = {
 
   getAll: catchAsync(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(50, parseInt(req.query.limit) || 10);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+    const { sort } = req.query;
 
-    const result = await confessionService.getAll({ sort: req.query.sort, page, limit });
+    const result = await confessionService.getAll({ sort, page, limit });
 
     res.json(result);
   }),

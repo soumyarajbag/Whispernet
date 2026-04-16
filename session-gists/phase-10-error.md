@@ -13,21 +13,40 @@ import { env } from "../config/env.js";
 export const errorHandler = (err, req, res, next) => {
   console.error(`[Error] ${err.stack || err.message}`);
 
+  // ── Mongoose: invalid ObjectId ────────────────────────────────────────────
   if (err.name === "CastError") {
-    return res.status(400).json({ error: true, message: `Invalid ID: '${err.value}'` });
+    return res.status(400).json({
+      error: true,
+      message: `Invalid ID format: '${err.value}'`,
+    });
   }
 
+  // ── Mongoose: schema-level validation failure ─────────────────────────────
   if (err.name === "ValidationError") {
     const messages = Object.values(err.errors).map((e) => e.message);
-    return res.status(422).json({ error: true, message: messages.join(" ") });
+    return res.status(422).json({
+      error: true,
+      message: messages.join(" "),
+    });
   }
 
-  const statusCode    = err.statusCode || 500;
+  // ── MongoDB: duplicate key ────────────────────────────────────────────────
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyValue || {})[0] || "field";
+    return res.status(409).json({
+      error: true,
+      message: `Duplicate value for '${field}'.`,
+    });
+  }
+
+  // ── Our own AppError ──────────────────────────────────────────────────────
+  const statusCode    = err.statusCode || err.status || 500;
   const isOperational = err.isOperational === true;
 
   res.status(statusCode).json({
     error:   true,
-    message: isOperational ? err.message : "Something went wrong.",
+    message: isOperational ? err.message : "Something went wrong. Please try again.",
+    // Only expose stack traces during local development
     ...(env.NODE_ENV === "development" && { stack: err.stack }),
   });
 };
@@ -42,31 +61,39 @@ export const errorHandler = (err, req, res, next) => {
 
 ## Step 2 — Update `src/app.js`
 
-Add the import and register the error handler **last** — after all routes, before `export default app`.
+Add the `errorHandler` import and register it **last** — after all routes and the 404 catch-all.
 
 Final complete `app.js`:
 
 ```js
-import express          from "express";
-import cors             from "cors";
-import cookieParser     from "cookie-parser";
+import express           from "express";
+import cors              from "cors";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
 import confessionRoutes from "./routes/confession.routes.js";
 import adminRoutes      from "./routes/admin.routes.js";
 import webhookRoutes    from "./routes/webhook.routes.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 app.use(express.json());
-app.use(cookieParser());
+
+app.use(express.static(join(__dirname, "../public")));
 
 app.use("/confessions", confessionRoutes);
 app.use("/admin",       adminRoutes);
 app.use("/webhooks",    webhookRoutes);
 
-app.use((req, res) => res.status(404).json({ error: true, message: "Route not found." }));
+// 404 catch-all — must come after all routes
+app.use((req, res) => {
+  res.status(404).json({ error: true, message: "Route not found." });
+});
 
+// Global error handler — MUST be last (4-parameter signature)
 app.use(errorHandler);
 
 export default app;
@@ -78,7 +105,7 @@ export default app;
 
 ```
 GET  /confessions/not-a-valid-id
-→ 400 { "error": true, "message": "Invalid ID: 'not-a-valid-id'" }
+→ 400 { "error": true, "message": "Invalid ID format: 'not-a-valid-id'" }
 
 POST /confessions  {}
 → 422 { "error": true, "message": "Validation failed.", "details": [...] }
@@ -121,7 +148,7 @@ Browser
 | HTTP layer | `src/controllers/confession.controller.js` |
 | Routing | `src/routes/confession.routes.js` |
 | Input validation | `src/validators/` + `src/middleware/validate.middleware.js` |
-| JWT auth (cookies) | `src/services/auth.service.js` + `src/middleware/auth.middleware.js` |
+| JWT auth (Bearer) | `src/services/auth.service.js` + `src/middleware/auth.middleware.js` |
 | Admin API | `src/controllers/admin.controller.js` + `src/routes/admin.routes.js` |
 | Real-time push | `src/websocket/broadcast.js` |
 | Event system | `src/webhooks/internal.webhook.js` + `src/controllers/webhook.controller.js` |

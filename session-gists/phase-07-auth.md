@@ -6,7 +6,7 @@
 ## Step 1 — Install packages
 
 ```bash
-npm install jsonwebtoken cookie-parser
+npm install jsonwebtoken
 ```
 
 ---
@@ -39,37 +39,50 @@ export const authService = {
 
 > ✍️ **Type these lines inside login():**
 > ```js
-> if (username !== env.ADMIN_USERNAME || password !== env.ADMIN_PASSWORD)
->   throw new AppError("Invalid credentials.", 401);
-> return jwt.sign({ username, role: "admin" }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+> const isValid = username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD;
+> if (!isValid) throw new AppError("Invalid credentials.", 401);
+> const token = jwt.sign({ username, role: "admin" }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+> return token;
 > ```
 
 ### verifyToken() — write this live:
 
 > ✍️ **Type these lines inside verifyToken():**
 > ```js
-> try   { return jwt.verify(token, env.JWT_SECRET); }
-> catch { throw new AppError("Invalid or expired token.", 401); }
+> try {
+>   return jwt.verify(token, env.JWT_SECRET);
+> } catch {
+>   throw new AppError("Invalid or expired token.", 401);
+> }
 > ```
 
 Complete file for reference:
 
 ```js
-import jwt      from "jsonwebtoken";
-import { env }  from "../config/env.js";
+import jwt from "jsonwebtoken";
+import { env } from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
 
 export const authService = {
 
   login(username, password) {
-    if (username !== env.ADMIN_USERNAME || password !== env.ADMIN_PASSWORD)
-      throw new AppError("Invalid credentials.", 401);
-    return jwt.sign({ username, role: "admin" }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+    const isValid = username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD;
+    if (!isValid) throw new AppError("Invalid credentials.", 401);
+
+    const token = jwt.sign(
+      { username, role: "admin" },
+      env.JWT_SECRET,
+      { expiresIn: env.JWT_EXPIRES_IN }
+    );
+    return token;
   },
 
   verifyToken(token) {
-    try   { return jwt.verify(token, env.JWT_SECRET); }
-    catch { throw new AppError("Invalid or expired token.", 401); }
+    try {
+      return jwt.verify(token, env.JWT_SECRET);
+    } catch {
+      throw new AppError("Invalid or expired token.", 401);
+    }
   },
 
 };
@@ -79,8 +92,6 @@ export const authService = {
 > jwt.sign() stamps a token. jwt.verify() validates it.
 > The payload is just base64 — paste the token at jwt.io and anyone can read it.
 > Never put passwords or secrets inside a JWT."*
-
-**Live demo:** `POST /admin/login` → copy the token → paste at jwt.io → show students the payload is readable.
 
 ---
 
@@ -102,13 +113,14 @@ export const verifyAdmin = (req, res, next) => {
 
 > ✍️ **Type these lines inside verifyAdmin():**
 > ```js
-> const token = req.cookies?.token;
-> if (!token)
+> const authHeader = req.headers["authorization"];
+> if (!authHeader?.startsWith("Bearer "))
 >   return res.status(401).json({ error: true, message: "Access denied. No token provided." });
+> const token = authHeader.split(" ")[1];
 > try {
 >   const decoded = authService.verifyToken(token);
 >   if (decoded.role !== "admin")
->     return res.status(403).json({ error: true, message: "Forbidden. Admin only." });
+>     return res.status(403).json({ error: true, message: "Forbidden. Admin role required." });
 >   req.user = decoded;
 >   next();
 > } catch (err) {
@@ -121,30 +133,44 @@ Complete file for reference:
 ```js
 import { authService } from "../services/auth.service.js";
 
+// Expects: Authorization: Bearer <jwt>
 export const verifyAdmin = (req, res, next) => {
-  const token = req.cookies?.token;
+  const authHeader = req.headers["authorization"];
 
-  if (!token)
-    return res.status(401).json({ error: true, message: "Access denied. No token provided." });
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: true,
+      message: "Access denied. No token provided.",
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
 
   try {
     const decoded = authService.verifyToken(token);
 
-    if (decoded.role !== "admin")
-      return res.status(403).json({ error: true, message: "Forbidden. Admin only." });
+    if (decoded.role !== "admin") {
+      return res.status(403).json({
+        error: true,
+        message: "Forbidden. Admin role required.",
+      });
+    }
 
-    req.user = decoded;
+    req.user = decoded; // Available in any downstream handler
     next();
   } catch (err) {
-    return res.status(err.statusCode || 401).json({ error: true, message: err.message });
+    return res.status(err.statusCode || 401).json({
+      error: true,
+      message: err.message,
+    });
   }
 };
 ```
 
-> *"Why cookies instead of localStorage?
-> localStorage = any JavaScript on the page can read it. If there's an XSS attack, the token is stolen.
-> httpOnly cookie = even malicious injected scripts cannot read it. The browser stores and sends it automatically.
-> SameSite=Strict = the browser won't send it on cross-site requests — CSRF-proof."*
+> *"The Authorization header is the standard REST way to pass tokens: `Authorization: Bearer <token>`.
+> We split on ' ' to strip the 'Bearer ' prefix and extract the raw JWT.
+> The payload inside the token is just base64 — paste it at jwt.io and anyone can read it.
+> Never put passwords or secrets inside a JWT payload."*
 
 ---
 
@@ -154,47 +180,29 @@ export const verifyAdmin = (req, res, next) => {
 
 ```js
 import { authService } from "../services/auth.service.js";
-import { env }         from "../config/env.js";
 import { catchAsync }  from "../utils/catchAsync.js";
-
-function expiryMs(str) {
-  const m = String(str).match(/^(\d+)([smhd])$/);
-  if (!m) return 7200000;
-  const units = { s: 1e3, m: 60e3, h: 3600e3, d: 86400e3 };
-  return parseInt(m[1]) * units[m[2]];
-}
-
-const COOKIE_OPTS = {
-  httpOnly: true,
-  sameSite: "strict",
-  secure:   env.NODE_ENV === "production",
-  maxAge:   expiryMs(env.JWT_EXPIRES_IN),
-};
 
 export const adminController = {
 
   login: catchAsync(async (req, res) => {
     const { username, password } = req.body;
     const token = authService.login(username, password);
-    res.cookie("token", token, COOKIE_OPTS).json({ message: "Login successful." });
-  }),
 
-  logout: catchAsync(async (_req, res) => {
-    res
-      .clearCookie("token", { httpOnly: true, sameSite: "strict", secure: env.NODE_ENV === "production" })
-      .json({ message: "Logged out." });
-  }),
-
-  verify: catchAsync(async (req, res) => {
-    res.json({ username: req.user.username, role: req.user.role });
+    res.json({
+      message: "Login successful.",
+      token,
+      hint: "Decode your token live at https://jwt.io to inspect the payload.",
+    });
   }),
 
 };
 ```
 
-> *"res.cookie() tells the browser to store the token.
-> The browser sends it back automatically on every future request — the frontend JS never sees the value.
-> clearCookie() in logout deletes it from the browser."*
+> *"We return the token directly in the JSON response body.
+> The client stores it (e.g. in memory or localStorage) and sends it back as `Authorization: Bearer <token>` on protected requests.
+> We include a hint to jwt.io — paste the token there live and show the class that the payload is readable: never put secrets in a JWT."*
+
+**Live demo:** `POST /admin/login` → copy the token from the response → paste at jwt.io → show students the `{ username, role, iat, exp }` payload is fully readable.
 
 ---
 
@@ -205,13 +213,10 @@ export const adminController = {
 ```js
 import { Router }          from "express";
 import { adminController } from "../controllers/admin.controller.js";
-import { verifyAdmin }     from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-router.post("/login",  adminController.login);
-router.post("/logout", adminController.logout);
-router.get("/verify",  verifyAdmin, adminController.verify);
+router.post("/login", adminController.login);
 
 export default router;
 ```
@@ -220,20 +225,18 @@ export default router;
 
 ## Step 6 — Update `src/app.js`
 
-Replace the entire file with this:
+Add the admin router import and mount it. Replace the entire file:
 
 ```js
 import express          from "express";
 import cors             from "cors";
-import cookieParser     from "cookie-parser";
 import confessionRoutes from "./routes/confession.routes.js";
 import adminRoutes      from "./routes/admin.routes.js";
 
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 app.use(express.json());
-app.use(cookieParser());
 
 app.use("/confessions", confessionRoutes);
 app.use("/admin",       adminRoutes);
@@ -289,22 +292,15 @@ export default router;
 
 ```
 POST /admin/login    { "username": "admin", "password": "secret123" }
-→ 200 { "message": "Login successful." }
-→ Cookie "token" appears in browser DevTools → Application → Cookies
-
-GET  /admin/verify
-→ 200 { "username": "admin", "role": "admin" }
+→ 200 { "message": "Login successful.", "token": "<jwt>", "hint": "..." }
+→ Copy the token value → paste at jwt.io → show the decoded payload
 
 POST /admin/login    { "username": "admin", "password": "wrong" }
 → 401 { "error": true, "message": "Invalid credentials." }
 
-DELETE /confessions/:id   (without logging in first)
-→ 401 { "error": true, "message": "Access denied." }
+DELETE /confessions/:id   (no Authorization header)
+→ 401 { "error": true, "message": "Access denied. No token provided." }
 
-DELETE /confessions/:id   (while logged in)
+DELETE /confessions/:id   (with header: Authorization: Bearer <token>)
 → 204 No Content
-
-POST /admin/logout
-→ 200 { "message": "Logged out." }
-→ Cookie is cleared from browser
 ```

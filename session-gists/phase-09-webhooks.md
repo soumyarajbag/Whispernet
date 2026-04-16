@@ -1,7 +1,7 @@
 # Phase 9 — Webhooks
 **Speaker 2 · 1:43 – 1:53**
 
-> No new packages needed.
+> No new packages needed. Node 18+ includes `fetch` globally.
 
 ---
 
@@ -15,57 +15,15 @@
 
 ---
 
-## Step 1 — Update `src/models/confession.model.js`
-
-Add three status fields to the schema (inside the schema definition, after `reports`):
-
-```js
-flagged:  { type: Boolean, default: false },
-hidden:   { type: Boolean, default: false },
-featured: { type: Boolean, default: false },
-```
-
-Full schema fields section:
-
-```js
-{
-  text: {
-    type:      String,
-    required:  [true, "Confession text is required"],
-    trim:      true,
-    maxlength: [500, "Must be 500 characters or fewer"],
-  },
-  upvotes:  { type: Number,  default: 0 },
-  reports:  { type: Number,  default: 0 },
-  flagged:  { type: Boolean, default: false },
-  hidden:   { type: Boolean, default: false },
-  featured: { type: Boolean, default: false },
-}
-```
-
----
-
-## Step 2 — Update `src/services/confession.service.js`
-
-In `getAll()`, change both `{}` filters to `{ hidden: false }` so hidden confessions don't appear in the feed:
-
-```js
-const [data, total] = await Promise.all([
-  Confession.find({ hidden: false }).sort(sortQuery).skip(skip).limit(limit),
-  Confession.countDocuments({ hidden: false }),
-]);
-```
-
----
-
-## Step 3 — Create `src/webhooks/internal.webhook.js`
+## Step 1 — Create `src/webhooks/internal.webhook.js`
 
 > Paste this complete.
 
 ```js
 import { env } from "../config/env.js";
 
-const WEBHOOK_URL = `http://localhost:${env.PORT}/webhooks/receive`;
+const WEBHOOK_URL    = `http://localhost:${env.PORT}/webhooks/receive`;
+const WEBHOOK_SECRET = env.WEBHOOK_SECRET;
 
 export const fireWebhook = async (event, payload) => {
   try {
@@ -73,24 +31,27 @@ export const fireWebhook = async (event, payload) => {
       method:  "POST",
       headers: {
         "Content-Type":     "application/json",
-        "X-Webhook-Secret": env.WEBHOOK_SECRET,
+        // X-Webhook-Secret proves the request came from us, not a random caller
+        "X-Webhook-Secret": WEBHOOK_SECRET,
       },
       body: JSON.stringify({ event, payload, firedAt: new Date().toISOString() }),
     });
     console.log(`[Webhook] ✓ Fired: ${event} → ${res.status}`);
   } catch (err) {
+    // Fire-and-forget: webhook failure should never crash the main request
     console.error(`[Webhook] ✗ Failed to fire "${event}":`, err.message);
   }
 };
 ```
 
 > *"fireWebhook sends an HTTP POST to our own /webhooks/receive endpoint.
-> Fire-and-forget — we don't await it so the original response goes back immediately.
-> X-Webhook-Secret proves the request came from us, not a random caller."*
+> Fire-and-forget — we don't await it in the controller, so the response goes back immediately.
+> X-Webhook-Secret proves the request came from us, not a random caller.
+> In a real system, WEBHOOK_URL could be any external service (Slack, Zapier, another microservice)."*
 
 ---
 
-## Step 4 — Create `src/controllers/webhook.controller.js`
+## Step 2 — Create `src/controllers/webhook.controller.js`
 
 > Paste this complete.
 
@@ -98,23 +59,53 @@ export const fireWebhook = async (event, payload) => {
 import Confession from "../models/confession.model.js";
 import { env }    from "../config/env.js";
 
+// In-memory log — in production you'd persist this in a DB or a log service
 const eventLog = [];
 
+const handleFlagged = async (payload) => {
+  await Confession.findByIdAndUpdate(payload.id, { flagged: true });
+  console.log(`[Webhook] Confession ${payload.id} flagged ← keyword: "${payload.keyword}"`);
+};
+
+const handleReported = async (payload) => {
+  await Confession.findByIdAndUpdate(payload.id, { hidden: true });
+  console.log(`[Webhook] Confession ${payload.id} hidden ← ${payload.reports} reports`);
+};
+
+const handleTrending = async (payload) => {
+  await Confession.findByIdAndUpdate(payload.id, { featured: true });
+  console.log(`[Webhook] Confession ${payload.id} featured ← ${payload.upvotes} upvotes`);
+};
+
+const HANDLERS = {
+  "confession.flagged":  handleFlagged,
+  "confession.reported": handleReported,
+  "confession.trending": handleTrending,
+};
+
 export const receiveWebhook = async (req, res) => {
-  if (req.headers["x-webhook-secret"] !== env.WEBHOOK_SECRET) {
+  // Step 1 — Verify the secret header (reject if it doesn't match)
+  const incoming = req.headers["x-webhook-secret"];
+  if (incoming !== env.WEBHOOK_SECRET) {
     console.warn("[Webhook] ⚠ Rejected — invalid secret");
     return res.status(401).json({ error: true, message: "Invalid webhook secret." });
   }
 
   const { event, payload, firedAt } = req.body;
 
+  // Step 2 — Log the event
   eventLog.unshift({ event, payload, firedAt, receivedAt: new Date().toISOString() });
-  if (eventLog.length > 100) eventLog.pop();
+  if (eventLog.length > 100) eventLog.pop(); // keep log bounded
 
-  if (event === "confession.flagged")  await Confession.findByIdAndUpdate(payload.id, { flagged:  true });
-  if (event === "confession.reported") await Confession.findByIdAndUpdate(payload.id, { hidden:   true });
-  if (event === "confession.trending") await Confession.findByIdAndUpdate(payload.id, { featured: true });
+  // Step 3 — Route to the right handler
+  const handler = HANDLERS[event];
+  if (handler) {
+    await handler(payload).catch((err) =>
+      console.error(`[Webhook] Handler error for "${event}":`, err.message)
+    );
+  }
 
+  // Always respond 200 quickly — the sender shouldn't wait on us
   res.json({ received: true, event });
 };
 
@@ -124,11 +115,12 @@ export const getEvents = (req, res) => {
 ```
 
 > *"The receiver validates the secret header first — reject unknown callers before doing any work.
-> Stripe, GitHub, Shopify all use this exact pattern."*
+> Stripe, GitHub, Shopify all use this exact pattern.
+> Separate handler functions per event type keep it clean and easy to extend."*
 
 ---
 
-## Step 5 — Create `src/routes/webhook.routes.js`
+## Step 3 — Create `src/routes/webhook.routes.js`
 
 > Paste this complete.
 
@@ -146,23 +138,28 @@ export default router;
 
 ---
 
-## Step 6 — Update `src/app.js`
+## Step 4 — Update `src/app.js`
 
-Add the import and mount the router. Replace the entire file:
+Add the webhook router and serve the frontend. Replace the entire file:
 
 ```js
-import express          from "express";
-import cors             from "cors";
-import cookieParser     from "cookie-parser";
+import express           from "express";
+import cors              from "cors";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
 import confessionRoutes from "./routes/confession.routes.js";
 import adminRoutes      from "./routes/admin.routes.js";
 import webhookRoutes    from "./routes/webhook.routes.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 app.use(express.json());
-app.use(cookieParser());
+
+// Serve the frontend from /public (needed for the WebSocket + webhook demo)
+app.use(express.static(join(__dirname, "../public")));
 
 app.use("/confessions", confessionRoutes);
 app.use("/admin",       adminRoutes);
@@ -171,9 +168,13 @@ app.use("/webhooks",    webhookRoutes);
 export default app;
 ```
 
+> *"express.static() serves the HTML/CSS/JS frontend from the /public folder.
+> In ES modules __dirname isn't built-in — fileURLToPath + dirname(import.meta.url) gives us the same thing.
+> Now one server handles REST, WebSocket, webhooks, and the static frontend — all on one port."*
+
 ---
 
-## Step 7 — Update `src/controllers/confession.controller.js`
+## Step 5 — Update `src/controllers/confession.controller.js`
 
 Add the import at the top:
 
@@ -190,8 +191,11 @@ const FLAGGED_KEYWORDS = ["urgent", "help", "danger", "emergency", "serious"];
 Inside `create` — add after `broadcast(...)`:
 
 ```js
-const match = FLAGGED_KEYWORDS.find((w) => confession.text.toLowerCase().includes(w));
-if (match) fireWebhook("confession.flagged", { id: confession.id, keyword: match, text: confession.text });
+const lowerText = confession.text.toLowerCase();
+const matchedKeyword = FLAGGED_KEYWORDS.find((w) => lowerText.includes(w));
+if (matchedKeyword) {
+  fireWebhook("confession.flagged", { id: confession.id, keyword: matchedKeyword, text: confession.text });
+}
 ```
 
 Inside `upvote` — add after `broadcast(...)`:
@@ -222,31 +226,44 @@ export const confessionController = {
 
   getAll: catchAsync(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(50, parseInt(req.query.limit) || 10);
-    const result = await confessionService.getAll({ sort: req.query.sort, page, limit });
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+    const { sort } = req.query;
+
+    const result = await confessionService.getAll({ sort, page, limit });
     res.json(result);
   }),
 
   create: catchAsync(async (req, res) => {
     const confession = await confessionService.create(req.body.text);
+
     broadcast("new_confession", confession);
-    const match = FLAGGED_KEYWORDS.find((w) => confession.text.toLowerCase().includes(w));
-    if (match) fireWebhook("confession.flagged", { id: confession.id, keyword: match, text: confession.text });
+
+    const lowerText = confession.text.toLowerCase();
+    const matchedKeyword = FLAGGED_KEYWORDS.find((w) => lowerText.includes(w));
+    if (matchedKeyword) {
+      fireWebhook("confession.flagged", { id: confession.id, keyword: matchedKeyword, text: confession.text });
+    }
+
     res.status(201).json({ data: confession });
   }),
 
   upvote: catchAsync(async (req, res) => {
     const confession = await confessionService.upvote(req.params.id);
+
     broadcast("upvote_updated", { id: confession.id, upvotes: confession.upvotes });
+
     if (confession.upvotes === 10)
       fireWebhook("confession.trending", { id: confession.id, upvotes: confession.upvotes });
+
     res.json({ data: confession });
   }),
 
   report: catchAsync(async (req, res) => {
     const confession = await confessionService.report(req.params.id);
+
     if (confession.reports >= 3)
       fireWebhook("confession.reported", { id: confession.id, reports: confession.reports });
+
     res.json({ data: confession });
   }),
 

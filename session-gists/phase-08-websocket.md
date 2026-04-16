@@ -68,8 +68,14 @@ const bootstrap = async () => {
   initWebSocket(server);
 
   server.listen(env.PORT, () => {
-    console.log(`WhisperNet → http://localhost:${env.PORT}`);
-    console.log(`WebSocket  → ws://localhost:${env.PORT}`);
+    console.log(`
+╔══════════════════════════════════════════╗
+║          WhisperNet API is live          ║
+╠══════════════════════════════════════════╣
+║  REST  →  http://localhost:${env.PORT}         ║
+║  WS    →  ws://localhost:${env.PORT}           ║
+╚══════════════════════════════════════════╝
+`);
   });
 };
 
@@ -118,8 +124,10 @@ export const confessionController = {
 
   getAll: catchAsync(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(50, parseInt(req.query.limit) || 10);
-    const result = await confessionService.getAll({ sort: req.query.sort, page, limit });
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+    const { sort } = req.query;
+
+    const result = await confessionService.getAll({ sort, page, limit });
     res.json(result);
   }),
 

@@ -529,29 +529,213 @@ x-webhook-secret: wrong-secret
 
 ---
 
-## Part 3 — WebSocket Test
+## Part 3 — WebSocket Tests
+
+> Postman supports WebSocket natively. Open the WS tab **once** and keep it connected
+> throughout the REST tests — every broadcast lands in the **Messages** panel in real time.
 
 ---
 
-### TC-19 · Connect and Listen for Live Events
+### How to open a WebSocket request in Postman
 
-**Purpose:** Stay connected and watch real-time broadcasts triggered by REST actions.
+1. Click **New** (top-left) → choose **WebSocket**
+2. Enter URL: `ws://localhost:3000`
+3. Click **Connect**
 
-1. In Postman, click **New** → **WebSocket Request**
-2. URL: `ws://localhost:3000`
-3. Click **Connect** — server logs will show `[WS] Client connected — total: 1`
+**Connection confirmed — server console prints:**
+```
+[WS] Client connected  — total: 1
+```
 
-**Keep the WS tab open**, then trigger events by sending REST requests in parallel tabs:
+**Postman Messages panel shows** (grey = received, blue = sent):
+```
+Connected to ws://localhost:3000
+```
 
-| REST Action | WS Message Received |
-|---|---|
-| `POST /confessions` | `{ "event": "new_confession", "payload": { ... } }` |
-| `PUT /confessions/:id/upvote` | `{ "event": "upvote_updated", "payload": { "id": "...", "upvotes": N } }` |
-| `DELETE /confessions/:id` | `{ "event": "confession_deleted", "payload": { "id": "..." } }` |
-| Upvote reaches 10 | `confession.trending` webhook fires + `featured: true` in DB |
-| Report count hits 3 | `confession.reported` webhook fires + `hidden: true` in DB |
+---
 
-**To disconnect:** click **Disconnect** — server logs will show `[WS] Client disconnected — total: 0`
+### TC-19 · Receive `new_confession` Event
+
+**Purpose:** Prove a WebSocket push fires the moment a confession is created.
+
+**Trigger** — in a separate Postman tab, send:
+```
+POST  {{base_url}}/confessions
+Content-Type: application/json
+```
+```json
+{
+  "text": "I still use Comic Sans unironically."
+}
+```
+
+**Message received in WS panel (exact shape):**
+```json
+{
+  "event": "new_confession",
+  "payload": {
+    "id": "6801a2f3e4b0c1d2e3f4a5b6",
+    "text": "I still use Comic Sans unironically.",
+    "upvotes": 0,
+    "reports": 0,
+    "flagged": false,
+    "hidden": false,
+    "featured": false,
+    "createdAt": "2026-04-16T10:00:00.000Z",
+    "updatedAt": "2026-04-16T10:00:00.000Z"
+  }
+}
+```
+
+**What to point out:**
+- `event` is the event name — the frontend switches on this to know what to render
+- `payload` is the full confession document, straight from MongoDB
+- `flagged`, `hidden`, `featured` all start `false` — webhook handlers change these later
+- No polling, no refresh — the message arrives in **< 1ms** of the POST completing
+
+---
+
+### TC-20 · Receive `upvote_updated` Event
+
+**Purpose:** Show that upvotes broadcast a lightweight delta — not the full document.
+
+**Trigger** — in a separate tab, send:
+```
+PUT  {{base_url}}/confessions/{{confession_id}}/upvote
+```
+
+**Message received in WS panel:**
+```json
+{
+  "event": "upvote_updated",
+  "payload": {
+    "id": "6801a2f3e4b0c1d2e3f4a5b6",
+    "upvotes": 1
+  }
+}
+```
+
+Hit upvote again — the next message will show `"upvotes": 2`, and so on:
+```json
+{
+  "event": "upvote_updated",
+  "payload": {
+    "id": "6801a2f3e4b0c1d2e3f4a5b6",
+    "upvotes": 2
+  }
+}
+```
+
+**What to point out:**
+- Only `id` and `upvotes` are sent — the frontend patches just that field, no full re-render
+- When `upvotes` reaches exactly `10`, a `confession.trending` webhook also fires in the background (visible in server logs and `GET /webhooks/events`)
+
+**Server log at upvote 10:**
+```
+[Webhook] ✓ Fired: confession.trending → 200
+[Webhook] Confession 6801a2f3e4b0c1d2e3f4a5b6 featured ← 10 upvotes
+```
+
+---
+
+### TC-21 · Receive `confession_deleted` Event
+
+**Purpose:** Show real-time removal — any connected client instantly knows the confession is gone.
+
+**Trigger** — in a separate tab, send:
+```
+DELETE  {{base_url}}/confessions/{{confession_id}}
+Authorization: Bearer {{admin_token}}
+```
+
+**Message received in WS panel:**
+```json
+{
+  "event": "confession_deleted",
+  "payload": {
+    "id": "6801a2f3e4b0c1d2e3f4a5b6"
+  }
+}
+```
+
+**What to point out:**
+- Payload is just the `id` — the frontend removes the card with that ID from the DOM
+- No full list refetch needed; the broadcast tells every connected client exactly which item to drop
+- The REST response for DELETE is `204 No Content` (empty body) — the WS message is the only data the client gets
+
+---
+
+### TC-22 · Observe `confession.flagged` Side-Effect via Webhook
+
+**Purpose:** Show the indirect effect — a REST POST triggers a webhook which updates the DB, visible by re-fetching.
+
+**Trigger** — POST a confession containing a flagged keyword:
+```
+POST  {{base_url}}/confessions
+Content-Type: application/json
+```
+```json
+{
+  "text": "This is an emergency, I need serious help."
+}
+```
+
+**WS panel receives `new_confession` first:**
+```json
+{
+  "event": "new_confession",
+  "payload": {
+    "id": "6801b3c4d5e6f7a8b9c0d1e2",
+    "text": "This is an emergency, I need serious help.",
+    "upvotes": 0,
+    "reports": 0,
+    "flagged": false,
+    "hidden": false,
+    "featured": false,
+    "createdAt": "2026-04-16T10:05:00.000Z",
+    "updatedAt": "2026-04-16T10:05:00.000Z"
+  }
+}
+```
+
+**Notice `flagged: false` in the WS message** — the webhook fires *after* the response.
+
+**Server logs immediately after:**
+```
+[Webhook] ✓ Fired: confession.flagged → 200
+[Webhook] Confession 6801b3c4d5e6f7a8b9c0d1e2 flagged ← keyword: "emergency"
+```
+
+**Verify the DB was updated** — send `GET /confessions` and find the confession:
+```json
+{
+  "id": "6801b3c4d5e6f7a8b9c0d1e2",
+  "text": "This is an emergency, I need serious help.",
+  "flagged": true,
+  ...
+}
+```
+
+**What to point out:**
+- The WebSocket push and the webhook fire are both async after the `201` response
+- `flagged` went from `false` → `true` without any extra client request
+- This is the webhook feedback loop: REST → webhook → DB update
+
+---
+
+### TC-23 · Disconnect
+
+**Purpose:** Confirm the server tracks connection count correctly.
+
+Click **Disconnect** in the Postman WebSocket tab.
+
+**Server console prints:**
+```
+[WS] Client disconnected — total: 0
+```
+
+Reconnect and open a second WS tab simultaneously — server will show `total: 2`.
+Each tab independently receives all broadcasts.
 
 ---
 
@@ -560,21 +744,24 @@ x-webhook-secret: wrong-secret
 Run these in sequence for a clean end-to-end story in the session:
 
 ```
+0.  TC-19  Open WS tab + Connect            → keep open the entire demo
 1.  TC-01  Admin Login                      → save token
-2.  TC-03  Create normal confession          → save ID, watch WS (new_confession)
+2.  TC-03  Create normal confession          → save ID; TC-19 shows new_confession
 3.  TC-07  Get All Confessions               → show it in the feed
 4.  TC-08  Get All sorted by top + paginated → show query params
 5.  TC-05  Create empty confession           → show 422 validation error
-6.  TC-09  Upvote ×1                        → watch WS (upvote_updated)
-7.  TC-10  Report ×3                        → webhook fires, hidden from feed
-8.  TC-04  Create confession with "urgent"   → auto webhook, check events log
-9.  TC-14  GET /webhooks/events              → show the log
+6.  TC-20  Upvote ×1                        → WS shows upvote_updated (upvotes:1)
+7.  TC-10  Report ×3                        → webhook fires; hidden from feed
+8.  TC-22  Create confession with "emergency"→ WS shows new_confession (flagged:false),
+            then GET to prove flagged:true in DB, check TC-14 events log
+9.  TC-14  GET /webhooks/events              → show the accumulated log
 10. TC-15  Send webhook manually (flagged)   → show direct receiver call
 11. TC-18  Send webhook wrong secret         → show 401 rejection
 12. TC-11  DELETE without token              → show 401
-13. TC-12  DELETE with token                 → 204, watch WS (confession_deleted)
+13. TC-21  DELETE with token                 → 204; WS shows confession_deleted
 14. TC-13  DELETE non-existent ID            → show 404
+15. TC-23  Disconnect WS                     → server logs total: 0
 ```
 
-> Open the WebSocket tab (TC-19) **before step 2** and keep it open throughout —
-> every broadcast will appear live in the Messages panel as you run the REST tests.
+> Step 0 is the most important — open the WS tab first so every broadcast is visible
+> as you fire the REST requests in the same window.
